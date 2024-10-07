@@ -30,10 +30,6 @@ module Fastlane
         params[:xcarchive] = config[:xcarchive]
         params[:dsym] = config[:dsym]
         params[:release_notes] = config[:release_notes]
-        params[:access_key] = config[:access_key]
-        params[:secret_access_key] = config[:secret_access_key]
-        params[:aws_session_token] = config[:aws_session_token]
-        params[:aws_profile] = config[:aws_profile]
         params[:bucket] = config[:bucket]
         params[:endpoint] = config[:endpoint]
         params[:download_endpoint] = config[:download_endpoint]
@@ -63,13 +59,7 @@ module Fastlane
         params[:folder] = config[:folder]
 
         # Pulling parameters for other uses
-        s3_region = params[:region]
-        s3_access_key = params[:access_key]
-        s3_secret_access_key = params[:secret_access_key]
-        s3_session_token = params[:aws_session_token]
-        s3_profile = params[:aws_profile]
         s3_bucket = params[:bucket]
-        s3_endpoint = params[:endpoint]
         apk_file = params[:apk]
         ipa_file = params[:ipa]
         release_notes = params[:release_notes]
@@ -87,28 +77,22 @@ module Fastlane
 
         require 'aws-sdk-s3'
 
-        client_cfg = {}
-        client_cfg[:region] = s3_region if s3_region
-        client_cfg[:endpoint] = s3_endpoint if s3_endpoint
-        client_cfg[:profile] = s3_profile if s3_profile
-        client_cfg[:credentials] = Aws::Credentials.new(s3_access_key, s3_secret_access_key, s3_session_token) if s3_access_key && s3_secret_access_key
-
-        s3_client = Aws::S3::Client.new(client_cfg)
+        s3_client = Aws::S3::Client.new()
 
         if xcarchive_file.nil?
           xcarchive_file = Actions.lane_context[SharedValues::XCODEBUILD_ARCHIVE]
         end
 
-        upload_ipa(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, ipa_file, dsym_file, release_notes, s3_path, acl, server_side_encryption) if ipa_file.to_s.length > 0
-        upload_apk(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, apk_file, release_notes, s3_path, acl, server_side_encryption) if apk_file.to_s.length > 0
-        upload_xcarchive(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, ipa_file, xcarchive_file, s3_path, acl, server_side_encryption) if xcarchive_file.to_s.length > 0
-        upload_files(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, files, s3_path, acl, server_side_encryption) if files.to_a.count > 0
-        upload_folder(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, folder, s3_path, acl, server_side_encryption) if folder.to_s.length > 0
+        upload_ipa(s3_client, params, s3_bucket, ipa_file, dsym_file, release_notes, s3_path, acl, server_side_encryption) if ipa_file.to_s.length > 0
+        upload_apk(s3_client, params, s3_bucket, apk_file, release_notes, s3_path, acl, server_side_encryption) if apk_file.to_s.length > 0
+        upload_xcarchive(s3_client, params, s3_bucket, ipa_file, xcarchive_file, s3_path, acl, server_side_encryption) if xcarchive_file.to_s.length > 0
+        upload_files(s3_client, params, s3_bucket, files, s3_path, acl, server_side_encryption) if files.to_a.count > 0
+        upload_folder(s3_client, params, s3_bucket, folder, s3_path, acl, server_side_encryption) if folder.to_s.length > 0
 
         return true
       end
 
-      def self.upload_ipa(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, ipa_file, dsym_file, release_notes, s3_path, acl, server_side_encryption)
+      def self.upload_ipa(s3_client, params, s3_bucket, ipa_file, dsym_file, release_notes, s3_path, acl, server_side_encryption)
 
         s3_path = "v{CFBundleShortVersionString}_b{CFBundleVersion}/" unless s3_path
 
@@ -294,7 +278,7 @@ module Fastlane
         UI.success("iOS app can be downloaded at '#{Actions.lane_context[SharedValues::S3_HTML_OUTPUT_PATH]}'") unless skip_html
       end
 
-      def self.upload_xcarchive(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, ipa_file, archive, s3_path, acl, server_side_encryption)
+      def self.upload_xcarchive(s3_client, params, s3_bucket, ipa_file, archive, s3_path, acl, server_side_encryption)
 
         s3_path = "v{CFBundleShortVersionString}_b{CFBundleVersion}/" unless s3_path
 
@@ -319,7 +303,7 @@ module Fastlane
         UI.success("Successfully uploaded archive file to '#{Actions.lane_context[SharedValues::S3_XCARCHIVE_OUTPUT_PATH]}'")
       end
 
-      def self.upload_apk(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, apk_file, release_notes, s3_path, acl, server_side_encryption)
+      def self.upload_apk(s3_client, params, s3_bucket, apk_file, release_notes, s3_path, acl, server_side_encryption)
         version = get_apk_version(apk_file)
 
         version_code = version[0]
@@ -515,7 +499,7 @@ module Fastlane
         [versionCode, versionName, name]
       end
 
-      def self.upload_files(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, files, s3_path, acl, server_side_encryption)
+      def self.upload_files(s3_client, params, s3_bucket, files, s3_path, acl, server_side_encryption)
 
         s3_path = "files" unless s3_path
 
@@ -529,12 +513,12 @@ module Fastlane
         files.each do |file|
           file_basename = File.basename(file)
           file_data = File.open(file, 'rb')
-          file_name = url_part 
+          file_name = url_part
 
           if file_name.to_s.length > 0 && file_name[-1] != '/'
               file_name = file_name + '/'
           end
-          
+
           file_name = file_name + file_basename
 
           file_url = self.upload_file(s3_client, s3_bucket, app_directory, file_name, file_data, acl, server_side_encryption, download_endpoint, download_endpoint_replacement_regex)
@@ -544,7 +528,7 @@ module Fastlane
         end
       end
 
-      def self.upload_folder(s3_client, params, s3_region, s3_access_key, s3_secret_access_key, s3_bucket, folder, s3_path, acl, server_side_encryption)
+      def self.upload_folder(s3_client, params, s3_bucket, folder, s3_path, acl, server_side_encryption)
 
         s3_path = "files" unless s3_path
 
@@ -734,36 +718,11 @@ module Fastlane
                                        env_name: "",
                                        description: "uploaded version filename",
                                        optional: true),
-          FastlaneCore::ConfigItem.new(key: :access_key,
-                                       env_name: "S3_ACCESS_KEY",
-                                       description: "AWS Access Key ID ",
-                                       optional: true,
-                                       default_value: ENV['AWS_ACCESS_KEY_ID']),
-          FastlaneCore::ConfigItem.new(key: :secret_access_key,
-                                       env_name: "S3_SECRET_ACCESS_KEY",
-                                       description: "AWS Secret Access Key ",
-                                       optional: true,
-                                       default_value: ENV['AWS_SECRET_ACCESS_KEY']),
-          FastlaneCore::ConfigItem.new(key: :aws_session_token,
-                                       env_name: "S3_SESSION_TOKEN",
-                                       description: "AWS Session TOKEN ",
-                                       optional: true,
-                                       default_value: ENV['AWS_SESSION_TOKEN']),
-          FastlaneCore::ConfigItem.new(key: :aws_profile,
-                                       env_name: "S3_PROFILE",
-                                       description: "AWS profile to use for credentials",
-                                       optional: true,
-                                       default_value: ENV['AWS_PROFILE']),
           FastlaneCore::ConfigItem.new(key: :bucket,
                                        env_name: "S3_BUCKET",
                                        description: "AWS bucket name",
                                        optional: true,
                                        default_value: ENV['AWS_BUCKET_NAME']),
-          FastlaneCore::ConfigItem.new(key: :region,
-                                       env_name: "S3_REGION",
-                                       description: "AWS region (for bucket creation) ",
-                                       optional: true,
-                                       default_value: ENV['AWS_REGION']),
           FastlaneCore::ConfigItem.new(key: :app_directory,
                                        env_name: "S3_BUCKET_APP_DIRECTORY",
                                        description: "Directory in bucket for the app",
@@ -786,11 +745,6 @@ module Fastlane
                                        description: "Enable encryption of the uploaded S3 object (set it to 'AES256' for example)",
                                        optional: true,
                                        default_value: ""),
-          FastlaneCore::ConfigItem.new(key: :endpoint,
-                                       env_name: "S3_ENDPOINT",
-                                       description: "The base endpoint for your S3 bucket",
-                                       optional: true,
-                                       default_value: nil),
           FastlaneCore::ConfigItem.new(key: :download_endpoint,
                                        env_name: "S3_DOWNLOAD_ENDPOINT",
                                        description: "The endpoint for downloads from your S3 bucket",
